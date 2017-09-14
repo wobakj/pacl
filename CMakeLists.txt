@@ -26,18 +26,20 @@ endif()
 # include glm, as system header to suppress warnings
 include_directories(SYSTEM external/glm-0.9.8.4)
 
-include_directories(include)
+# include cmdline
+include_directories(SYSTEM external/cmdline-e4cd007)
 
 # ocl exe
 find_package(MPI REQUIRED)
-add_executable(hello source/hello.cpp)
-install(TARGETS hello DESTINATION .)
+add_executable(perf_test source/perf_test.cpp)
+install(TARGETS perf_test DESTINATION .)
 # dependencies
-target_include_directories(hello SYSTEM PRIVATE ${MPI_CXX_INCLUDE_PATH})
-target_link_libraries(hello ${MPI_CXX_LIBRARIES})
+target_include_directories(perf_test PRIVATE include)
+target_include_directories(perf_test SYSTEM PRIVATE ${MPI_CXX_INCLUDE_PATH})
+target_link_libraries(perf_test ${MPI_CXX_LIBRARIES})
 # Add a test:
-enable_testing()
-add_test(SimpleTest ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} 4 ${CMAKE_CURRENT_BINARY_DIR}/mytest)
+# enable_testing()
+# add_test(SimpleTest ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} 4 ${CMAKE_CURRENT_BINARY_DIR}/mytest)
 
 # set build type dependent flags
 if(UNIX)
@@ -63,7 +65,3 @@ else()
 endif()
 
 # SET(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
-
-# installation rules, copy ocl kernels
-install(DIRECTORY ${PROJECT_SOURCE_DIR}/kernels
-DESTINATION ${CMAKE_INSTALL_PREFIX})

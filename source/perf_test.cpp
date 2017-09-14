@@ -1,7 +1,8 @@
 #include "statistics.hpp"
 
-// #include <glm/glm.hpp>
 #include <glm/gtc/type_precision.hpp>
+
+#include <cmdline.h>
 
 #include <mpi.h>
 
@@ -14,11 +15,10 @@ void master();
 void worker();
 glm::uvec2 cell_resolution(glm::uvec2 const& resolution, uint32_t num_workers);
 
-glm::uvec2 resolution{1920, 1080};
+glm::uvec2 resolution{0, 0};
 glm::uvec2 res_worker{0, 0};
 
 int main(int argc, char* argv[]) {
-  // MPI::Init (argc, argv);
   int provided;
   // auto thread_type = MPI_THREAD_FUNNELED;
   auto thread_type = MPI_THREAD_SERIALIZED;
@@ -35,6 +35,14 @@ int main(int argc, char* argv[]) {
     std::cerr << "number of processes must be 2 or a larger poer of two +1" << std::endl;
     throw std::runtime_error{"invalid process number"};
   }
+  // logic start
+  cmdline::parser cmd_parse{};
+  cmd_parse.add<uint>("width", 'w', "horizontal resolution, default 1920", false, 1920, cmdline::range(640, 7680));
+  cmd_parse.add<uint>("height", 'h', "vertical resolution, default 1080", false, 1080, cmdline::range(480, 7680));
+  cmd_parse.parse(argc, argv);
+
+  resolution.x = cmd_parse.get<uint>("width");
+  resolution.y = cmd_parse.get<uint>("height");
 
   res_worker = cell_resolution(resolution, MPI::COMM_WORLD.Get_size() - 1);
   if (MPI::COMM_WORLD.Get_rank() == 0) {
@@ -46,7 +54,14 @@ int main(int argc, char* argv[]) {
 
   MPI::Finalize();
 }
-
+// logic
+Statistics statistics{};
+std::vector<glm::u8vec2> buffer;
+size_t num_iter = 100;
+uint32_t num_workers = 0;
+glm::fmat4 mat_view{};
+glm::fmat4 mat_frustum{};
+std::vector<glm::fmat4> mat_frustra{};
 
 glm::uvec2 cell_resolution(glm::uvec2 const& resolution, uint32_t num_workers) {
   // unsigned num_workers = MPI::COMM_WORLD.Get_size() - 1;
@@ -74,19 +89,15 @@ glm::uvec2 cell_resolution(glm::uvec2 const& resolution, uint32_t num_workers) {
       l2 -= 1.0f;
     }
     if (MPI::COMM_WORLD.Get_rank() == 0) {
-      std::cout << "Cell resolution: " << frustum_cells.x << " x " << frustum_cells.y << std::endl;
+      std::cout << "Full resolution: " << resolution.x << " x " << resolution.y << " - size " << resolution.x * resolution.y * 4 << "Bytes" << std::endl;
+      std::cout << "Cell division: " << frustum_cells.x << " x " << frustum_cells.y << std::endl;
+      auto cell_res = resolution / frustum_cells;
+      std::cout << "Cell resolution: " << cell_res.x << " x " << cell_res.y << " - size " << cell_res.x * cell_res.y * 4 << "Bytes" << std::endl;
+      std::cout << "Running loop " << num_iter << " times " << std::endl;
     }
   }
   return resolution / frustum_cells;
 }
-
-Statistics statistics{};
-std::vector<glm::u8vec2> buffer;
-size_t num_iter = 100;
-uint32_t num_workers = 0;
-glm::fmat4 mat_view{};
-glm::fmat4 mat_frustum{};
-std::vector<glm::fmat4> mat_frustra{};
 
 void master() {
   buffer = std::vector<glm::u8vec2>{resolution.x * resolution.y * 4};
@@ -144,6 +155,6 @@ void worker() {
     statistics.stop("send");
   }
  
-  std::cout << "Worker " << MPI::COMM_WORLD.Get_rank() << " receive time: " << statistics.get("receive") << " milliseconds " << std::endl;
-  std::cout << "Worker " << MPI::COMM_WORLD.Get_rank() << " send time: " << statistics.get("send") << " milliseconds " << std::endl;
+  std::cout << " Worker " << MPI::COMM_WORLD.Get_rank() << " receive time: " << statistics.get("receive") << " milliseconds " << std::endl;
+  std::cout << " Worker " << MPI::COMM_WORLD.Get_rank() << " send time: " << statistics.get("send") << " milliseconds " << std::endl;
 }
