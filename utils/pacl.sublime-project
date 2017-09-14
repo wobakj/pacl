@@ -14,7 +14,7 @@
         "name": "PACL",
         "file_regex": "^(..[^:]*):(.*)$",
         "working_dir": "${project_path}/../build",
-        "cmd":  ["make"]
+        "cmd":  ["make", "install"]
       }
     ]
 }

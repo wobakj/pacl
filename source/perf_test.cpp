@@ -32,7 +32,7 @@ int main(int argc, char* argv[]) {
   }
   uint32_t num_processes = MPI::COMM_WORLD.Get_size();
   if (!(num_processes == 2 || (num_processes > 2 && num_processes % 2 == 1))) {
-    std::cerr << "number of processes must be 2 or a larger poer of two +1" << std::endl;
+    std::cerr << "number of processes must be 2 or a larger power of two +1" << std::endl;
     throw std::runtime_error{"invalid process number"};
   }
   // logic start
@@ -88,18 +88,16 @@ glm::uvec2 cell_resolution(glm::uvec2 const& resolution, uint32_t num_workers) {
       cell_dims = frustum_dims / glm::fvec2{frustum_cells};
       l2 -= 1.0f;
     }
-    if (MPI::COMM_WORLD.Get_rank() == 0) {
-      std::cout << "Full resolution: " << resolution.x << " x " << resolution.y << " - size " << resolution.x * resolution.y * 4 << "Bytes" << std::endl;
-      std::cout << "Cell division: " << frustum_cells.x << " x " << frustum_cells.y << std::endl;
-      auto cell_res = resolution / frustum_cells;
-      std::cout << "Cell resolution: " << cell_res.x << " x " << cell_res.y << " - size " << cell_res.x * cell_res.y * 4 << "Bytes" << std::endl;
-      std::cout << "Running loop " << num_iter << " times " << std::endl;
-    }
   }
   return resolution / frustum_cells;
 }
 
 void master() {
+  std::cout << "Full resolution: " << resolution.x << " x " << resolution.y << ", size " << resolution.x * resolution.y * 4 / 1024 << " KByte" << std::endl;
+  // std::cout << "Cell division: " << frustum_cells.x << " x " << frustum_cells.y << std::endl;
+  std::cout << "Cell resolution: " << res_worker.x << " x " << res_worker.y << ", size " << res_worker.x * res_worker.y * 4 / 1024 << " KByte" << std::endl;
+  std::cout << "Running loop " << num_iter << " times " << std::endl;
+  
   buffer = std::vector<glm::u8vec2>{resolution.x * resolution.y * 4};
   statistics.addTimer("receive");
   statistics.addTimer("send");
@@ -119,16 +117,29 @@ void master() {
     // receive
     statistics.start("receive");
     int size_chunk = int(res_worker.x * res_worker.y * 4);
-    // copy into current subregion
-    // size_t offset = res.buffer_views.at("transfer").offset();
-    // copy chunk from process [1] to beginning
-    // offset -= size_chunk; 
     MPI::COMM_WORLD.Gather(MPI::IN_PLACE, size_chunk, MPI::BYTE, buffer.data(), size_chunk, MPI::BYTE, 0);
     statistics.stop("receive");
   }
 
-  std::cout << "Master send time: " << statistics.get("send") << " milliseconds " << std::endl;
-  std::cout << "Master receive time: " << statistics.get("receive") << " milliseconds " << std::endl;
+  std::vector<double> w_send(num_workers, 0.0);
+  MPI::COMM_WORLD.Gather(MPI::IN_PLACE, 1, MPI::DOUBLE, w_send.data() - 1, 1, MPI::DOUBLE, 0);
+  std::vector<double> w_rec(num_workers, 0.0);
+  MPI::COMM_WORLD.Gather(MPI::IN_PLACE, 1, MPI::DOUBLE, w_rec.data() - 1, 1, MPI::DOUBLE, 0);
+
+  double avg_send = 0.0;
+  double avg_rec = 0.0;
+  for(uint32_t i = 0; i < num_workers; ++i) {
+    avg_rec += w_rec[i];
+    avg_send += w_send[i];
+  }
+  avg_send /= double(num_workers);
+  avg_rec /= double(num_workers);
+
+  std::cout << "Worker matrix receive time: " << avg_rec << " milliseconds " << std::endl;
+  std::cout << "Worker buffer send time: " << avg_send << " milliseconds " << std::endl;
+  
+  std::cout << "Master matrix send time: " << statistics.get("send") << " milliseconds " << std::endl;
+  std::cout << "Master buffer receive time: " << statistics.get("receive") << " milliseconds " << std::endl;
 }
 
 void worker() {
@@ -153,8 +164,10 @@ void worker() {
     int size = int(buffer.size());
     MPI::COMM_WORLD.Gather(buffer.data(), size, MPI::BYTE, nullptr, size, MPI::BYTE, 0);
     statistics.stop("send");
+    std::this_thread::sleep_for(std::chrono::milliseconds(3));
   }
- 
-  std::cout << " Worker " << MPI::COMM_WORLD.Get_rank() << " receive time: " << statistics.get("receive") << " milliseconds " << std::endl;
-  std::cout << " Worker " << MPI::COMM_WORLD.Get_rank() << " send time: " << statistics.get("send") << " milliseconds " << std::endl;
+  double send = statistics.get("send");
+  MPI::COMM_WORLD.Gather(&send, 1, MPI::DOUBLE, nullptr, 1, MPI::DOUBLE, 0);
+  double rec = statistics.get("receive");
+  MPI::COMM_WORLD.Gather(&rec, 1, MPI::DOUBLE, nullptr, 1, MPI::DOUBLE, 0);
 }
